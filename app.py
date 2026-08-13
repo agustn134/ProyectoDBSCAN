@@ -426,51 +426,25 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
             kd_data = calcular_kdistancia(df_filtrado, MIN_SAMPLES_RECOMENDADO)
             
             fig_kd = go.Figure()
-            
-            # Zona densa (arquetipos)
-            fig_kd.add_hrect(
-                y0=0, y1=kd_data["eps_codo"],
-                fillcolor="#f0fdf4", opacity=0.6, line_width=0,
-                annotation_text="⬇ Zona de Arquetipos (Personas con hábitos similares)", 
-                annotation_position="bottom right", annotation_font_color="#16a34a",
-                annotation_font_size=11
-            )
-            # Zona de ruido (aislados)
-            fig_kd.add_hrect(
-                y0=kd_data["eps_codo"], y1=max(kd_data["distancias"]) * 1.05,
-                fillcolor="#fef2f2", opacity=0.6, line_width=0,
-                annotation_text="⬆ Zona de Ruido (Personas con hábitos muy atípicos)", 
-                annotation_position="top right", annotation_font_color="#dc2626",
-                annotation_font_size=11
-            )
-
             fig_kd.add_trace(go.Scatter(
-                x=list(range(len(kd_data["distancias"]))),
                 y=kd_data["distancias"], mode="lines", 
-                line=dict(color="#3b82f6", width=2.5), name="Curva de Aislamiento",
-                hovertemplate="Persona N° %{x}<br>Nivel de Aislamiento: %{y:.3f}<extra></extra>"
+                line=dict(color="#3b82f6", width=2), name="k-distancia"
             ))
-            
-            # Punto de codo
             fig_kd.add_trace(go.Scatter(
                 x=[kd_data["idx_codo"]], y=[kd_data["eps_codo"]],
-                mode="markers+text", marker=dict(color="#ef4444", size=10, line=dict(color="white", width=2)),
-                text=[f"  Corte sugerido (ε ≈ {kd_data['eps_codo']:.2f})"], textposition="middle right",
-                textfont=dict(color="#ef4444", size=12, family="Arial Black"),
-                name="Umbral óptimo", hoverinfo="skip"
+                mode="markers", marker=dict(color="#ef4444", size=10),
+                name=f"Codo → ε ≈ {kd_data['eps_codo']:.3f}"
             ))
-            
-            fig_kd.add_hline(y=kd_data["eps_codo"], line_width=1.5, line_dash="dash", line_color="#ef4444", opacity=0.7)
+            fig_kd.add_vline(x=kd_data["idx_codo"], line_width=1.5, line_dash="dash", line_color="#ef4444")
+            fig_kd.add_hline(y=kd_data["eps_codo"], line_width=1, line_dash="dot", line_color="#ef4444")
             
             fig_kd.update_layout(
-                title=dict(text="Análisis de Aislamiento (k-distancia) para encontrar el corte ideal", font=dict(size=14)),
-                xaxis_title="Personas (ordenadas de menor a mayor aislamiento)",
-                yaxis_title="Nivel de Aislamiento (Distancia)",
-                height=380, margin=dict(l=20, r=20, t=40, b=20),
-                plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-                legend=dict(yanchor="top", y=0.95, xanchor="left", x=0.02, bgcolor="rgba(255,255,255,0.9)", bordercolor="#e2e8f0", borderwidth=1),
-                xaxis=dict(showgrid=False, zeroline=False),
-                yaxis=dict(showgrid=True, gridcolor="#f1f5f9", zeroline=False)
+                title=dict(text="Gráfico de k-distancia para selección de ε", font=dict(size=13)),
+                xaxis_title="Puntos ordenados",
+                yaxis_title=f"{kd_data['min_samples_usado']}-distancia (ε)",
+                height=300, margin=dict(l=20, r=20, t=40, b=20),
+                plot_bgcolor="#f8fafc", paper_bgcolor="#ffffff",
+                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
             )
             st.plotly_chart(fig_kd, use_container_width=True)
             st.caption(

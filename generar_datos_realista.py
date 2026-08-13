@@ -1,4 +1,4 @@
-﻿"""
+"""
 generar_datos_realista.py
 --------------------------
 Genera un CSV sintetico de respuestas para el proyecto "Arquetipos de
@@ -15,53 +15,53 @@ import pandas as pd
 
 ARQUETIPOS = {
     "Hedonista Social": dict(
-        probs_p1=[0.55, 0.20, 0.15, 0.10],
-        probs_p2=[0.10, 0.55, 0.20, 0.15],
-        probs_p3=[0.50, 0.30, 0.15, 0.05],
-        probs_p5=[0.55, 0.25, 0.10, 0.10],
-        estres_media=6.8, estres_std=1.4,
+        probs_p1=[0.72, 0.13, 0.08, 0.07],
+        probs_p2=[0.08, 0.72, 0.12, 0.08],
+        probs_p3=[0.65, 0.20, 0.10, 0.05],
+        probs_p5=[0.70, 0.15, 0.08, 0.07],
+        estres_media=6.8, estres_std=1.0,
         edad_media=22, edad_std=3,
         peso=0.28,
     ),
     "Bienestar Consciente": dict(
-        probs_p1=[0.15, 0.10, 0.55, 0.20],
-        probs_p2=[0.60, 0.10, 0.15, 0.15],
-        probs_p3=[0.10, 0.20, 0.40, 0.30],
-        probs_p5=[0.10, 0.15, 0.55, 0.20],
-        estres_media=4.0, estres_std=1.3,
-        edad_media=27, edad_std=5,
+        probs_p1=[0.10, 0.05, 0.75, 0.10],
+        probs_p2=[0.75, 0.05, 0.10, 0.10],
+        probs_p3=[0.05, 0.15, 0.50, 0.30],
+        probs_p5=[0.05, 0.10, 0.70, 0.15],
+        estres_media=4.0, estres_std=1.0,
+        edad_media=27, edad_std=3,
         peso=0.24,
     ),
     "Explorador de Experiencias": dict(
-        probs_p1=[0.15, 0.15, 0.15, 0.55],
-        probs_p2=[0.15, 0.20, 0.15, 0.50],
-        probs_p3=[0.30, 0.35, 0.25, 0.10],
-        probs_p5=[0.20, 0.50, 0.15, 0.15],
-        estres_media=5.2, estres_std=1.6,
-        edad_media=24, edad_std=4,
+        probs_p1=[0.10, 0.10, 0.10, 0.70],
+        probs_p2=[0.10, 0.15, 0.10, 0.65],
+        probs_p3=[0.35, 0.40, 0.15, 0.10],
+        probs_p5=[0.15, 0.65, 0.10, 0.10],
+        estres_media=5.2, estres_std=1.2,
+        edad_media=24, edad_std=3,
         peso=0.22,
     ),
     "Equilibrado Practico": dict(
-        probs_p1=[0.20, 0.15, 0.50, 0.15],
-        probs_p2=[0.20, 0.15, 0.50, 0.15],
-        probs_p3=[0.10, 0.15, 0.55, 0.20],
-        probs_p5=[0.15, 0.15, 0.55, 0.15],
-        estres_media=4.6, estres_std=1.2,
-        edad_media=30, edad_std=6,
+        probs_p1=[0.15, 0.10, 0.65, 0.10],
+        probs_p2=[0.10, 0.15, 0.65, 0.10],
+        probs_p3=[0.05, 0.15, 0.65, 0.15],
+        probs_p5=[0.10, 0.10, 0.65, 0.15],
+        estres_media=4.6, estres_std=1.0,
+        edad_media=30, edad_std=4,
         peso=0.18,
     ),
     "Ansioso Compensador": dict(
-        probs_p1=[0.30, 0.10, 0.20, 0.40],
-        probs_p2=[0.05, 0.65, 0.10, 0.20],
-        probs_p3=[0.40, 0.35, 0.15, 0.10],
-        probs_p5=[0.45, 0.20, 0.10, 0.25],
-        estres_media=8.1, estres_std=1.2,
+        probs_p1=[0.40, 0.05, 0.15, 0.40],
+        probs_p2=[0.05, 0.75, 0.05, 0.15],
+        probs_p3=[0.45, 0.40, 0.10, 0.05],
+        probs_p5=[0.55, 0.15, 0.10, 0.20],
+        estres_media=8.1, estres_std=1.0,
         edad_media=23, edad_std=3,
         peso=0.08,
     ),
 }
 
-RUIDO_INTRA   = 0.18
+RUIDO_INTRA   = 0.08
 PROP_OUTLIERS = 0.04
 
 OPCIONES_LETRA = ["A", "B", "C", "D"]

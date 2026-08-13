@@ -505,6 +505,9 @@ def generar_reporte_pdf(texto_reporte: str) -> bytes:
     from fpdf import FPDF
     import io
     
+    # Reemplazar caracteres no soportados por la fuente Helvetica estándar
+    texto_reporte = texto_reporte.replace("—", "-").replace("✦", "*").replace("⬡", "*")
+    
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
