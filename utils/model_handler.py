@@ -37,15 +37,17 @@ TARGET_MAX_CLUSTERS = 6
 
 def min_samples_recomendado(n_registros: int, d_variables: int = 5) -> int:
     """
-    Calcula un min_samples adaptado al tamaño de la muestra.
+    Escala min_samples con el tamaño de muestra sin explotar en n pequeños.
 
-    La regla clásica D+1 (=6 con 5 variables) es razonable para muestras
-    pequeñas (~73 registros), pero con muestras grandes (>500) ese umbral
-    es tan bajo que casi cualquier bolsita de puntos supera el criterio de
-    'núcleo', lo que produce decenas de micro-clusters.
+    Regla: max(D+1, round(1% × n)), con techo en 50.
 
-    Esta función escala el umbral logarítmicamente para que 'vecindad densa'
-    siga siendo estadísticamente significativa independientemente del n.
+    Casos clave:
+      n=73   → max(6, round(0.73)=1)  = 6   (regla clásica, funciona con datos reales)
+      n=500  → max(6, round(5)=5)    = 6   (conservador para muestras medianas)
+      n=5000 → max(6, round(50)=50)  = 50  (evita micro-clusters con datos sintéticos)
+
+    La fórmula anterior (log(n)×D) daba ≈21 para n=73, lo que impide
+    encontrar arquetipos válidos en muestras pequeñas.
 
     Parameters
     ----------
@@ -54,11 +56,12 @@ def min_samples_recomendado(n_registros: int, d_variables: int = 5) -> int:
 
     Returns
     -------
-    int con el min_samples recomendado (mínimo D+1)
+    int con el min_samples recomendado (mínimo D+1, máximo 50)
     """
-    base = d_variables + 1                              # regla clásica (≥6)
-    escalado = int(np.log(max(n_registros, 2)) * d_variables)
-    return max(base, escalado)
+    base = d_variables + 1                    # piso clásico (6)
+    proporcional = round(0.01 * n_registros)  # ~1% de la muestra
+    valor = max(base, proporcional)
+    return int(min(valor, 50))                # techo para n muy grande
 
 
 

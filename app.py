@@ -361,7 +361,7 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
                     similares (estar dentro del radio ε) para que DBSCAN las considere un <em>arquetipo válido</em>.
                     Si hay menos, las marca como <strong>ruido</strong> (casos atípicos).<br>
                     <span style='color:#3b82f6; font-weight:600;'>✦ Valor sugerido: {MIN_SAMPLES_RECOMENDADO}</span>
-                    <span style='color:#64748b;'> (escalado automáticamente: log(n={len(df_filtrado)}) × D=5 variables)</span>
+                    <span style='color:#64748b;'> (escalado: max(6,&nbsp;1%&nbsp;×&nbsp;n={len(df_filtrado)}), techo 50)</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
