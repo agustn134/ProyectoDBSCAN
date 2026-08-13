@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 # pyrefly: ignore [missing-import]
 import plotly.graph_objects as go
+import plotly.express as px
 
 from utils.styles       import inject_css
 from utils.background   import inject_hero_geometric_background
@@ -201,21 +202,26 @@ with st.expander("2.   Estadística descriptiva", expanded=False):
     col_s1, col_s2 = st.columns(2)
     with col_s1:
         st.markdown("**Distribución de edad**")
-        fig1, ax1 = plt.subplots(figsize=(5, 3.2))
-        sns.histplot(df_filtrado["Edad"], bins=10, kde=True, ax=ax1,
-                     color="#0f0f11", edgecolor="#ffffff", alpha=0.85)
-        ax1.set_xlabel("Edad"); ax1.set_ylabel("Frecuencia")
-        ax1.yaxis.grid(True); ax1.set_axisbelow(True)
-        fig1.tight_layout(); st.pyplot(fig1); plt.close(fig1)
+        fig1 = px.histogram(df_filtrado, x="Edad", nbins=10, 
+                            color_discrete_sequence=["#3b82f6"])
+        fig1.update_layout(margin=dict(l=20, r=20, t=20, b=20), height=250)
+        st.plotly_chart(fig1, use_container_width=True)
+        edad_prom = df_filtrado["Edad"].mean()
+        if pd.notnull(edad_prom):
+            st.caption(f"La mayoría de tus encuestados tiene entre {int(edad_prom-5)} y {int(edad_prom+5)} años.")
 
     with col_s2:
         st.markdown("**Nivel de estrés percibido (1-10)**")
-        fig2, ax2 = plt.subplots(figsize=(5, 3.2))
-        sns.histplot(df_filtrado["P4_NivelEstres"], bins=10, kde=True, ax=ax2,
-                     color="#27272a", edgecolor="#ffffff", alpha=0.85)
-        ax2.set_xlabel("Nivel de estrés"); ax2.set_ylabel("Frecuencia")
-        ax2.yaxis.grid(True); ax2.set_axisbelow(True)
-        fig2.tight_layout(); st.pyplot(fig2); plt.close(fig2)
+        fig2 = px.histogram(df_filtrado, x="P4_NivelEstres", nbins=10,
+                            color_discrete_sequence=["#ef4444"])
+        fig2.update_layout(margin=dict(l=20, r=20, t=20, b=20), height=250)
+        st.plotly_chart(fig2, use_container_width=True)
+        estres_prom = df_filtrado["P4_NivelEstres"].mean()
+        if pd.notnull(estres_prom):
+            if estres_prom >= 6:
+                st.caption(f"El nivel de estrés es **alto** ({estres_prom:.1f}/10 en promedio).")
+            else:
+                st.caption(f"El nivel de estrés es **moderado a bajo** ({estres_prom:.1f}/10 en promedio).")
 
     st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
     st.markdown("**Composición por género**")
@@ -227,27 +233,29 @@ with st.expander("2.   Estadística descriptiva", expanded=False):
         st.dataframe(conteo_genero, use_container_width=True, hide_index=True)
 
     with col_s4:
-        fig3, ax3 = plt.subplots(figsize=(5, 3))
         color_map = {
-            "Masculino": "#2563eb",
-            "Femenino":  "#ec4899",
-            "Otro":      "#10b981",
-            "Non-binary": "#8b5cf6",
+            "Hombre": "#2563eb",
+            "Mujer":  "#ec4899",
+            "Otro":   "#10b981",
+            "No binario": "#8b5cf6",
         }
-        palette_fallback = ["#2563eb", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6"]
-        bar_colors = [
-            color_map.get(str(g), palette_fallback[i % len(palette_fallback)])
-            for i, g in enumerate(conteo_genero["Genero"])
-        ]
-        ax3.bar(conteo_genero["Genero"], conteo_genero["n"],
-                color=bar_colors, edgecolor="#ffffff", linewidth=0.8, alpha=0.9)
-        ax3.set_xlabel("Género"); ax3.set_ylabel("Respuestas")
-        ax3.yaxis.grid(True); ax3.set_axisbelow(True)
-        fig3.tight_layout(); st.pyplot(fig3); plt.close(fig3)
+        fig3 = px.bar(conteo_genero, x="Genero", y="n", color="Genero",
+                      color_discrete_map=color_map)
+        fig3.update_layout(margin=dict(l=20, r=20, t=20, b=20), height=250, showlegend=False)
+        st.plotly_chart(fig3, use_container_width=True)
+        if len(conteo_genero) > 0:
+            mayoria_gen = conteo_genero.iloc[0]["Genero"]
+            pct_mayoria = (conteo_genero.iloc[0]["n"] / len(df_filtrado)) * 100
+            st.caption(f"La muestra está compuesta principalmente por {mayoria_gen} ({pct_mayoria:.1f}%).")
 
     st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
-    st.markdown("**Resumen estadístico**")
-    st.dataframe(df_filtrado[FEATURES].describe().round(2), use_container_width=True)
+    with st.expander("Ver resumen estadístico numérico (Tabla completa)"):
+        st.caption(
+            "Escala de las variables numéricas codificadas (P1, P2, P3, P5): "
+            "1 = A) primera opción · 2 = B) segunda opción · 3 = C) tercera opción · 4 = D) cuarta opción "
+            "— ver el texto exacto de cada pregunta en la Sección 1."
+        )
+        st.dataframe(df_filtrado[FEATURES].describe().round(2), use_container_width=True)
 
 # ===========================================================================
 # SECCION 3 — PONDERACION Y JUSTIFICACION TEORICA
