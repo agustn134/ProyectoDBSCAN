@@ -11,6 +11,7 @@ Este archivo SOLO orquesta la interfaz: no contiene logica de datos ni de ML.
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
+import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -25,6 +26,7 @@ from utils.model_handler import (
     PESOS_INFO, COLORES_PALETTE,
     entrenar, guardar_archivos, interpretar_clusters, generar_reporte,
     calcular_epsilon_sugerido, contar_clusters_para_eps, min_samples_recomendado,
+    calcular_silueta, calcular_kdistancia,
 )
 
 # ---------------------------------------------------------------------------
@@ -365,6 +367,39 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
                 unsafe_allow_html=True,
             )
         kw = dict(eps=eps, min_samples=min_samples)
+
+        # --- Gráfico de k-distancia (justificación visual del ε sugerido) ---
+        with st.expander("📐 Ver gráfico de k-distancia — cómo se calculó el ε sugerido", expanded=False):
+            st.markdown(
+                "<p style='color:#64748b; font-size:0.85rem; margin-bottom:0.6rem;'>"
+                "Cada punto del eje Y es la distancia al <em>k</em>-ésimo vecino más cercano "
+                "de una persona, ordenadas de menor a mayor. "
+                "El <strong style='color:#ef4444;'>codo</strong> marca el cambio brusco entre "
+                "'zona densa' y 'zona de ruido' — ahí está el ε óptimo."
+                "</p>",
+                unsafe_allow_html=True,
+            )
+            kd_data = calcular_kdistancia(df_filtrado, MIN_SAMPLES_RECOMENDADO)
+            fig_kd, ax_kd = plt.subplots(figsize=(7, 3))
+            ax_kd.plot(kd_data["distancias"], color="#3b82f6", linewidth=1.5, alpha=0.9,
+                       label="k-distancia")
+            ax_kd.axvline(kd_data["idx_codo"], color="#ef4444", linestyle="--",
+                          linewidth=1.4, label=f"Codo → ε ≈ {kd_data['eps_codo']:.3f}")
+            ax_kd.axhline(kd_data["eps_codo"], color="#ef4444", linestyle=":",
+                          linewidth=1.0, alpha=0.45)
+            ax_kd.scatter([kd_data["idx_codo"]], [kd_data["eps_codo"]],
+                          color="#ef4444", s=55, zorder=5)
+            ax_kd.set_xlabel("Puntos ordenados", fontsize=9)
+            ax_kd.set_ylabel(f"{kd_data['min_samples_usado']}-distancia (ε)", fontsize=9)
+            ax_kd.set_title("Gráfico de k-distancia para selección de ε", fontsize=10)
+            ax_kd.legend(fontsize=8); ax_kd.yaxis.grid(True); ax_kd.set_axisbelow(True)
+            fig_kd.tight_layout()
+            st.pyplot(fig_kd)
+            plt.close(fig_kd)
+            st.caption(
+                f"ε sugerido: {eps_sugerido}  ·  min_samples usado: {kd_data['min_samples_usado']}  ·  "
+                f"n = {len(df_filtrado)} registros"
+            )
     else:
         with col_e1:
             k_clusters = st.slider("Número de clusters (k)", 2, 8, 3, key="kc")
@@ -426,78 +461,154 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
         # -----------------------------------------------------------------------
         # Interpretaciones + Nombres teóricos (calculadas ANTES del plot)
         # -----------------------------------------------------------------------
+        # --- Coeficiente de silueta ---
+        sil = calcular_silueta(df_filtrado, res["labels"])
+        if sil is not None:
+            sil_color  = "#16a34a" if sil >= 0.5 else ("#d97706" if sil >= 0.25 else "#dc2626")
+            sil_bg     = "#f0fdf4" if sil >= 0.5 else ("#fffbeb" if sil >= 0.25 else "#fef2f2")
+            sil_border = "#bbf7d0" if sil >= 0.5 else ("#fde68a" if sil >= 0.25 else "#fecaca")
+            sil_label  = "Bueno ✅" if sil >= 0.5 else ("Moderado ⚠️" if sil >= 0.25 else "Débil ❌")
+            sil_interp = (
+                "Los arquetipos están bien definidos y claramente separados entre sí."
+                if sil >= 0.5 else
+                "Los arquetipos tienen estructura razonable pero con cierto solapamiento entre perfiles."
+                if sil >= 0.25 else
+                "Los arquetipos se solapan considerablemente. Considera ajustar ε o min_samples."
+            )
+            st.markdown(
+                f"""
+                <div style='background:{sil_bg}; border:1px solid {sil_border};
+                            border-left:4px solid {sil_color}; border-radius:10px;
+                            padding:0.75rem 1.15rem; margin:0.5rem 0 0.8rem 0;'>
+                    <span style='font-size:0.88rem; color:#374151;'>
+                        <strong>Coeficiente de Silueta</strong>
+                        &nbsp;&bull;&nbsp;
+                        <span style='font-size:1.35rem; font-weight:800;
+                                     color:{sil_color};'>{sil:.3f}</span>
+                        &nbsp;—&nbsp;
+                        <strong style='color:{sil_color};'>{sil_label}</strong>
+                    </span><br>
+                    <span style='font-size:0.82rem; color:#475569;'>
+                        {sil_interp}
+                        &nbsp;<em>(Escala: −1 pésimo &bull; 0 solapado &bull; +1 perfecto)</em>
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
         from scipy.spatial import ConvexHull
 
         df_resultado = res["df_resultado"]
         labels_arr   = res["labels"]
 
         def determinar_nombre_arquetipo(subset):
-            """Analiza el cluster y asigna el nombre teórico + descripción."""
+            """
+            Asigna nombre teórico usando P1 (gasto), P2 (manejo estrés),
+            P3 (frecuencia) y P4 (nivel estrés) para mayor especificidad
+            y menor riesgo de colisión entre clusters distintos.
+            """
             if len(subset) == 0:
                 return "Perfil Mixto", "#6366f1", "Sin datos suficientes."
             p1_moda    = int(subset["P1_Destino_num"].mode()[0])
+            p2_moda    = int(subset["P2_Estres_num"].mode()[0])
             p3_mediana = subset["P3_Frecuencia_num"].median()
+            p4_media   = subset["P4_NivelEstres"].mean()
 
             if p1_moda == 1:
-                return (
-                    "Hedonista Social", "#3b82f6",
-                    "Gasta en salidas, bebidas y fiestas. "
-                    "Ve el consumo como la principal forma de desconectar del estrés.",
-                )
+                # Gasta en entretenimiento/salidas
+                if p4_media >= 6.5:
+                    return (
+                        "Hedonista Social — Alto Estrés", "#3b82f6",
+                        "Sale frecuentemente a desconectarse con alcohol y fiestas. "
+                        "El consumo social es su válvula de escape frente a un estrés elevado.",
+                    )
+                else:
+                    return (
+                        "Hedonista Social — Bajo Estrés", "#60a5fa",
+                        "Gasta en salidas y ocio desde un estado de bienestar. "
+                        "El consumo social es parte de su estilo de vida, no una compensación.",
+                    )
             elif p1_moda == 2:
-                return (
-                    "Bienestar Consciente", "#10b981",
-                    "Invierte en salud, gimnasio, comida sana o naturaleza. "
-                    "Busca equilibrio y controla su estrés de forma proactiva.",
-                )
+                # Gasta en bienestar / salud
+                if p2_moda == 1:   # manejo activo (ejercicio)
+                    return (
+                        "Bienestar Consciente — Activo", "#10b981",
+                        "Invierte en gym, comida sana o naturaleza y maneja el estrés "
+                        "de forma proactiva con actividad física.",
+                    )
+                else:
+                    return (
+                        "Bienestar Consciente — Reflexivo", "#34d399",
+                        "Orienta su gasto hacia el equilibrio personal. "
+                        "Prefiere descansar o planificar antes de salir a consumir.",
+                    )
             elif p1_moda == 3 and p3_mediana <= 2:
                 return (
                     "Equilibrado Práctico", "#f59e0b",
-                    "Gasta de vez en cuando, pero prioriza el ahorro o metas a futuro. "
-                    "No es ni extremo fiestero ni extremo asceta.",
+                    "Gasta de forma moderada y prioriza el ahorro o metas a futuro. "
+                    "Sale poco y cuando lo hace elige actividades de bajo costo.",
                 )
             elif p1_moda == 4 or (p1_moda == 3 and p3_mediana > 2):
-                return (
-                    "Explorador de Experiencias", "#8b5cf6",
-                    "Libera el estrés buscando novedad, aprendizaje o aventuras. "
-                    "Gasta, pero en crecimiento, no en vicio.",
-                )
+                if p3_mediana >= 3:
+                    return (
+                        "Explorador de Experiencias — Frecuente", "#8b5cf6",
+                        "Sale seguido buscando novedad: viajes, cursos o aventuras. "
+                        "Gasta en crecimiento y descubrimiento, no en rutina.",
+                    )
+                else:
+                    return (
+                        "Explorador de Experiencias — Ocasional", "#a78bfa",
+                        "Busca experiencias de forma selectiva. "
+                        "Calidad sobre cantidad: pocas salidas pero significativas.",
+                    )
             else:
                 return (
                     "Perfil Mixto", "#64748b",
-                    "Combinación de patrones de consumo sin predominancia clara.",
+                    "Combinación de patrones sin predominancia clara en ninguna dimensión.",
                 )
 
-        unique_labels    = sorted(df_resultado["Cluster"].unique())
+        unique_labels     = sorted(df_resultado["Cluster"].unique())
         arquetipos_reales = [l for l in unique_labels if l != -1]
         v = res["varianza"]
 
-        # Construir mapa label -> (nombre, color, descripción)
+        # Construir mapa label -> metadatos del arquetipo
         info_arq = {}
         interpretaciones = []
         for label in arquetipos_reales:
             subset = df_resultado[df_resultado["Cluster"] == label]
             nombre, color, desc = determinar_nombre_arquetipo(subset)
-            
-            n_arq = len(subset)
-            pct_arq = round(n_arq / len(df_resultado) * 100, 1) if len(df_resultado) > 0 else 0
-            edad_prom = round(subset["Edad"].mean(), 1) if n_arq > 0 else 0
+            n_arq       = len(subset)
+            pct_arq     = round(n_arq / len(df_resultado) * 100, 1) if len(df_resultado) > 0 else 0
+            edad_prom   = round(subset["Edad"].mean(), 1) if n_arq > 0 else 0
             estres_prom = round(subset["P4_NivelEstres"].mean(), 1) if n_arq > 0 else 0
-            
-            p1_str = subset["P1_Destino"].mode()[0] if n_arq > 0 else "N/A"
-            p2_str = subset["P2_Estres"].mode()[0] if n_arq > 0 else "N/A"
-            
-            info_arq[label] = {"nombre": nombre, "color": color, "desc": desc,
-                               "n": n_arq, "pct": pct_arq,
-                               "edad_prom": edad_prom, "estres_prom": estres_prom}
-                               
+            p1_str      = subset["P1_Destino"].mode()[0] if n_arq > 0 else "N/A"
+            p2_str      = subset["P2_Estres"].mode()[0]  if n_arq > 0 else "N/A"
+            info_arq[label] = {
+                "nombre": nombre, "color": color, "desc": desc,
+                "n": n_arq, "pct": pct_arq,
+                "edad_prom": edad_prom, "estres_prom": estres_prom,
+            }
             interpretaciones.append({
                 "arquetipo": f"{label} - {nombre}",
                 "n": n_arq, "pct": pct_arq,
                 "edad_prom": edad_prom, "estres_prom": estres_prom,
-                "patron_gasto": p1_str,
-                "manejo_estres": p2_str
+                "patron_gasto": p1_str, "manejo_estres": p2_str,
             })
+
+        # --- Garantizar nombres únicos por cluster ---
+        # Si dos clusters comparten nombre (misma regla P1), se distinguen
+        # por nivel de estrés promedio + ID para evitar confusión en el reporte.
+        nombre_a_labels: dict = {}
+        for lbl in arquetipos_reales:
+            nm = info_arq[lbl]["nombre"]
+            nombre_a_labels.setdefault(nm, []).append(lbl)
+        for nm, lbls in nombre_a_labels.items():
+            if len(lbls) > 1:
+                for lbl in lbls:
+                    est = info_arq[lbl]["estres_prom"]
+                    sufijo = "Alto Estrés" if est >= 5.5 else "Bajo Estrés"
+                    info_arq[lbl]["nombre"] = f"{nm} · {sufijo} (A{lbl})"
 
         # -----------------------------------------------------------------------
         # Grafica PCA interactiva con Convex Hull
@@ -544,16 +655,32 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
                 except Exception:
                     pass  # si hay colinealidad, se salta el hull
 
-        # --- Puntos de cada cluster ---
+        # --- Puntos de cada cluster (Scattergl para rendimiento + jitter visual) ---
+        # El jitter (ruido aleatorio pequeño) revela puntos superpuestos en datasets
+        # con variables categóricas, donde muchas filas comparten coordenadas PCA exactas.
+        # Es puramente visual: no altera el clustering ni los datos originales.
+        pca1_rng = df_resultado["PCA_1"].max() - df_resultado["PCA_1"].min() + 1e-6
+        pca2_rng = df_resultado["PCA_2"].max() - df_resultado["PCA_2"].min() + 1e-6
+        jitter_pct = 0.008  # 0.8% del rango total
+
         for i, label in enumerate(unique_labels):
             subset = df_resultado[df_resultado["Cluster"] == label].copy()
 
             if label == -1:
-                color         = "#a1a1aa"
-                nombre_grupo  = "⬡ Casos atípicos / Ruido"
+                color        = "#a1a1aa"
+                nombre_grupo = "⬡ Casos atípicos / Ruido"
             else:
-                color         = info_arq[label]["color"]
-                nombre_grupo  = f"{info_arq[label]['nombre']} (A{label})"
+                color        = info_arq[label]["color"]
+                nombre_grupo = f"{info_arq[label]['nombre']} (A{label})"
+
+            # Jitter reproducible por subset (misma seed → mismo dibujo en cada recarga)
+            rng_j  = np.random.default_rng(42 + (label if label != -1 else 999))
+            x_plot = subset["PCA_1"].values + rng_j.uniform(
+                -jitter_pct * pca1_rng, jitter_pct * pca1_rng, len(subset)
+            )
+            y_plot = subset["PCA_2"].values + rng_j.uniform(
+                -jitter_pct * pca2_rng, jitter_pct * pca2_rng, len(subset)
+            )
 
             hover_texts = []
             for _, row in subset.iterrows():
@@ -567,12 +694,12 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
                     f"Manejo estrés: {row.get('P2_Estres', '—')}"
                 )
 
-            fig_plotly.add_trace(go.Scatter(
-                x=subset["PCA_1"], y=subset["PCA_2"],
+            fig_plotly.add_trace(go.Scattergl(
+                x=x_plot, y=y_plot,
                 mode="markers",
                 name=nombre_grupo,
-                marker=dict(color=color, size=8, opacity=0.85,
-                            line=dict(color="white", width=0.8)),
+                marker=dict(color=color, size=7, opacity=0.72,
+                            line=dict(color="white", width=0.6)),
                 hovertemplate="%{customdata}<extra></extra>",
                 customdata=hover_texts,
             ))

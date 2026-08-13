@@ -247,6 +247,91 @@ def contar_clusters_para_eps(
     return len(set(labels) - {-1})
 
 
+def calcular_silueta(df: pd.DataFrame, labels) -> float | None:
+    """
+    Calcula el coeficiente de silueta promedio para los clusters encontrados,
+    excluyendo los puntos de ruido (label == -1).
+
+    El coeficiente de silueta mide qué tan bien separado está cada punto
+    de los clusters vecinos respecto a su propio cluster. Escala [-1, 1]:
+      > 0.5  → clusters bien definidos
+      0.25-0.5 → estructura moderada
+      < 0.25 → clusters solapados o estructura débil
+
+    Parameters
+    ----------
+    df     : DataFrame filtrado (mismo que se usó para entrenar)
+    labels : array de labels producido por DBSCAN / K-Means
+
+    Returns
+    -------
+    float con el coeficiente, o None si no hay suficientes clusters.
+    """
+    from sklearn.metrics import silhouette_score
+
+    labels_arr = np.array(labels)
+    mask       = labels_arr != -1
+    n_clusters = len(set(labels_arr[mask]))
+
+    if n_clusters < 2 or mask.sum() < 4:
+        return None
+
+    X = df[FEATURES].values
+    X_weighted = StandardScaler().fit_transform(X) * WEIGHTS
+
+    try:
+        return float(silhouette_score(X_weighted[mask], labels_arr[mask]))
+    except Exception:
+        return None
+
+
+def calcular_kdistancia(
+    df: pd.DataFrame, min_samples: int | None = None
+) -> dict:
+    """
+    Calcula las k-distancias ordenadas para mostrar el gráfico del codo,
+    que justifica visualmente el ε sugerido automáticamente.
+
+    Parameters
+    ----------
+    df          : DataFrame limpio con las columnas FEATURES
+    min_samples : si es None, se calcula con min_samples_recomendado()
+
+    Returns
+    -------
+    dict con:
+        distancias        : np.ndarray de k-distancias ordenadas (asc.)
+        idx_codo          : int, índice del codo (máxima segunda derivada)
+        eps_codo          : float, valor de eps en el codo
+        min_samples_usado : int
+    """
+    from sklearn.neighbors import NearestNeighbors
+
+    if min_samples is None:
+        min_samples = min_samples_recomendado(len(df))
+
+    X = df[FEATURES].values
+    X_weighted = StandardScaler().fit_transform(X) * WEIGHTS
+
+    k = min(max(min_samples - 1, 1), len(X_weighted) - 1)
+    neigh = NearestNeighbors(n_neighbors=k).fit(X_weighted)
+    distances, _ = neigh.kneighbors(X_weighted)
+    d_sorted = np.sort(distances[:, k - 1])
+
+    if len(d_sorted) > 2:
+        segunda_deriv = np.diff(d_sorted, n=2)
+        idx_codo = int(np.argmax(segunda_deriv)) + 2
+    else:
+        idx_codo = len(d_sorted) // 2
+
+    return {
+        "distancias":        d_sorted,
+        "idx_codo":          idx_codo,
+        "eps_codo":          float(d_sorted[idx_codo]),
+        "min_samples_usado": min_samples,
+    }
+
+
 
 def guardar_archivos(modelo_obj: dict, metadatos: dict) -> None:
     """Persiste el modelo .pkl y los metadatos .json en el directorio de trabajo."""
