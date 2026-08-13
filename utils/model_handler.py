@@ -8,6 +8,7 @@ No contiene nada de Streamlit.
 
 import json
 import datetime
+import unicodedata
 import joblib
 
 import numpy as np
@@ -559,19 +560,67 @@ def comparar_modelos(
     return pd.DataFrame(resultados)
 
 
+def sanitizar_texto_pdf(texto) -> str:
+    """
+    Convierte cualquier texto a una version segura para renderizar con
+    fpdf2 + fuente Helvetica (que solo soporta Latin-1 / WinAnsi).
+
+    1) Reemplaza caracteres tipograficos comunes por su equivalente ASCII
+       "con sentido" (ej. — -> -, · -> -, comillas curvas -> rectas).
+    2) Reemplaza emojis de estado usados en la interfaz por una etiqueta
+       de texto equivalente, para no perder informacion (ej. warning).
+    3) Como ultimo resguardo, normaliza y descarta cualquier caracter
+       Unicode que no tenga representacion ASCII (acentos ya se resuelven
+       aca tambien, por si el texto no paso antes por quitar_acentos()).
+    """
+    if texto is None:
+        return ""
+    texto = str(texto)
+
+    reemplazos = {
+        # guiones y separadores tipograficos
+        "\u2014": "-", "\u2013": "-", "\u2212": "-",
+        "\u00b7": "-", "\u2022": "-", "\u2023": "-", "\u25cf": "-",
+        # comillas curvas
+        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+        "\u2026": "...",
+        # emojis de estado usados en la app (mapear a texto, no perder info)
+        "\u2705": "[OK]", "\u26a0\ufe0f": "[!]", "\u274c": "[X]", "\u2139\ufe0f": "[i]",
+        "\u2726": "*", "\u2b21": "o", "\u2713": "v",
+        # emojis decorativos sin valor informativo -> se eliminan
+        "\U0001f5fa\ufe0f": "", "\U0001f4cc": "", "\U0001f389": "",
+        "\U0001f4d0": "", "\U0001f504": "", "\U0001f4cb": "",
+        "\U0001f9f9": "", "\U0001f4dd": "",
+    }
+    for viejo, nuevo in reemplazos.items():
+        texto = texto.replace(viejo, nuevo)
+
+    # Red de seguridad final: cualquier caracter Unicode que sobreviva
+    # (acentos, emojis nuevos no mapeados, simbolos raros) se descompone
+    # y se descarta si no tiene forma ASCII. Esto es lo que garantiza que
+    # la funcion nunca vuelva a crashear, pase lo que pase en el texto.
+    texto = unicodedata.normalize("NFKD", texto).encode("ASCII", "ignore").decode("ASCII")
+    return texto
+
+
 def generar_reporte_pdf(texto_reporte: str) -> bytes:
     from fpdf import FPDF
-    import io
-    
-    # Reemplazar caracteres no soportados por la fuente Helvetica estándar
-    texto_reporte = texto_reporte.replace("—", "-").replace("✦", "*").replace("⬡", "*")
-    
+
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
     pdf.set_font("Helvetica", size=10)
+
+    # Ancho util explicito: evita que multi_cell calcule w=0 cuando el
+    # cursor X esta desplazado, lo que causa "Not enough horizontal space".
+    usable_w = pdf.w - pdf.l_margin - pdf.r_margin
+
     for linea in texto_reporte.split("\n"):
-        pdf.multi_cell(0, 6, txt=linea)
-        
+        linea_segura = sanitizar_texto_pdf(linea)
+        if not linea_segura or linea_segura.isspace():
+            # Linea vacia -> salto de parrafo, no pasar a multi_cell
+            pdf.ln(6)
+        else:
+            pdf.multi_cell(usable_w, 6, text=linea_segura)
+
     return pdf.output(dest="S")

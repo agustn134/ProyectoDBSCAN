@@ -10,7 +10,7 @@ df_real['Edad'] = df_real['Edad'].astype(int)
 df_real['P4_NivelEstres'] = df_real['P4_NivelEstres'].astype(int)
 
 n_real = len(df_real)
-print(f"✅ Datos reales cargados correctamente: {n_real} registros.")
+print(f" Datos reales cargados correctamente: {n_real} registros.")
 
 # 2. Configuración de generación
 total_deseado = 5000
@@ -77,7 +77,7 @@ df_final.to_csv(archivo_salida, index=False, sep=";")
 
 print("="*60)
 print(f"🎉 ¡ÉXITO TOTAL!")
-print(f"✅ Se generó '{archivo_salida}' con {len(df_final)} registros.")
+print(f"Se generó '{archivo_salida}' con {len(df_final)} registros.")
 print(f"   - Datos reales: {n_real}")
 print(f"   - Datos sintéticos balanceados: {n_sintetico}")
 print(f"   - Datos de ruido (atípicos): {n_ruido}")

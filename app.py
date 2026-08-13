@@ -28,7 +28,7 @@ from utils.model_handler import (
     entrenar, guardar_archivos, guardar_corrida, cargar_historial,
     interpretar_clusters, generar_reporte,
     calcular_epsilon_sugerido, contar_clusters_para_eps, min_samples_recomendado,
-    calcular_silueta, calcular_kdistancia, comparar_modelos, generar_reporte_pdf
+    calcular_silueta, calcular_kdistancia, comparar_modelos
 )
 
 # ---------------------------------------------------------------------------
@@ -205,7 +205,7 @@ with st.expander("1.   Vista de datos y filtros", expanded=True):
     st.caption(f"Mostrando {len(df_vista)} de {n_total} respuestas válidas.")
 
     st.download_button(
-        label="⬇️ Descargar datos filtrados (CSV)",
+        label="Descargar datos filtrados (CSV)",
         data=df_filtrado.to_csv(sep=";", index=False).encode("utf-8-sig"),
         file_name=f"datos_filtrados_{filtro_genero}_{filtro_edad[0]}-{filtro_edad[1]}.csv",
         mime="text/csv",
@@ -362,13 +362,13 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
                 badge_color  = "#16a34a"
                 badge_bg     = "#f0fdf4"
                 badge_border = "#bbf7d0"
-                badge_icon   = "✅"
+                badge_icon   = ""
                 rango_txt    = "dentro del rango ideal (3-6)"
             else:
                 badge_color  = "#d97706"
                 badge_bg     = "#fffbeb"
                 badge_border = "#fde68a"
-                badge_icon   = "⚠️"
+                badge_icon   = ""
                 rango_txt    = "fuera del rango ideal (3-6)"
 
             st.markdown(
@@ -392,8 +392,8 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
                 <div style='font-size:0.82rem; color:#475569; margin-top:0.25rem; line-height:1.5;'>
                     <strong>¿Qué es?</strong> Define el radio de búsqueda alrededor de cada persona.
                     Dos personas con hábitos similares quedan dentro de este radio y se pueden agrupar.<br>
-                    <strong>⚠️ Muy pequeño</strong> → muchos grupos diminutos o todo ruido.<br>
-                    <strong>⚠️ Muy grande</strong> → todos terminan en un solo grupo.<br>
+                    <strong>Muy pequeño</strong> → muchos grupos diminutos o todo ruido.<br>
+                    <strong>Muy grande</strong> → todos terminan en un solo grupo.<br>
                     <span style='color:#3b82f6; font-weight:600;'>✦ Valor sugerido por tus datos: {eps_sugerido}</span>
                     <span style='color:#64748b;'> (calculado automáticamente con la técnica k-distancia)</span>
                 </div>
@@ -540,7 +540,7 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
             sil_color  = "#16a34a" if sil >= 0.5 else ("#d97706" if sil >= 0.25 else "#dc2626")
             sil_bg     = "#f0fdf4" if sil >= 0.5 else ("#fffbeb" if sil >= 0.25 else "#fef2f2")
             sil_border = "#bbf7d0" if sil >= 0.5 else ("#fde68a" if sil >= 0.25 else "#fecaca")
-            sil_label  = "Bueno ✅" if sil >= 0.5 else ("Moderado ⚠️" if sil >= 0.25 else "Débil ❌")
+            sil_label  = "Bueno " if sil >= 0.5 else ("Moderado " if sil >= 0.25 else "Débil ❌")
             sil_interp = (
                 "Los arquetipos están bien definidos y claramente separados entre sí."
                 if sil >= 0.5 else
@@ -664,7 +664,7 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
         # -----------------------------------------------------------------------
         # Grafica PCA interactiva con Convex Hull
         # -----------------------------------------------------------------------
-        st.markdown("**🗺️ Mapa interactivo de arquetipos de consumo social**")
+        st.markdown("**Mapa interactivo de arquetipos de consumo social**")
         st.caption(
             "Pasa el cursor sobre cada punto para ver los detalles · "
             "Haz zoom arrastrando · Haz clic en la leyenda para ocultar/mostrar grupos"
@@ -857,7 +857,7 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
             <div style='font-size:0.82rem; color:#64748b; background:#f8fafc;
                         border-left:3px solid #cbd5e1; padding:0.65rem 1rem;
                         border-radius:0 8px 8px 0; margin-top:0.2rem;'>
-            <strong>📌 ¿Por qué los ejes tienen números como −0.4 o 0.6?</strong><br>
+            <strong>¿Por qué los ejes tienen números como −0.4 o 0.6?</strong><br>
             Este mapa no muestra edades ni respuestas directas. El algoritmo combinó tus 5 variables
             en 2 "resúmenes". Los números son <strong>distancias relativas</strong>: lo importante
             no es el número, sino <em>qué tan cerca o lejos</em> están los puntos entre sí.
@@ -911,7 +911,7 @@ a ningún arquetipo. Su presencia <strong>valida la robustez del modelo</strong>
 <p>Descarga los archivos generados por el algoritmo para su integración en producción o análisis posterior.</p>
 </div>""", unsafe_allow_html=True)
 
-        col_d1, col_d2, col_d3, col_d4, col_d5 = st.columns(5)
+        col_d1, col_d2, col_d3, col_d4 = st.columns(4)
 
         with col_d1:
             st.download_button(
@@ -948,21 +948,14 @@ a ningún arquetipo. Su presencia <strong>valida la robustez del modelo</strong>
                 file_name="reporte_arquetipos.txt",
                 mime="text/plain",
             )
-        with col_d5:
-            pdf_bytes = generar_reporte_pdf(reporte)
-            st.download_button(
-                label="Reporte (.pdf)",
-                data=pdf_bytes,
-                file_name="reporte_arquetipos.pdf",
-                mime="application/pdf",
-            )
+
 
 # ===========================================================================
 # SECCION 4.1 — HISTORIAL DE CORRIDAS
 # ===========================================================================
 st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
 
-with st.expander("🗂️  Historial de corridas anteriores", expanded=False):
+with st.expander("Historial de corridas anteriores", expanded=False):
     historial = cargar_historial()
     if not historial:
         st.caption("Todavía no hay corridas guardadas. Entrena el modelo al menos una vez.")

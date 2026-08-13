@@ -232,11 +232,11 @@ df_limpio = df_limpio[[
 # ============================================================================
 archivo_excel = "datos_limpios.xlsx"
 df_limpio.to_excel(archivo_excel, index=False, engine='openpyxl')
-print(f"\n✅ Archivo Excel guardado: {archivo_excel}")
+print(f"\n Archivo Excel guardado: {archivo_excel}")
 
 archivo_csv = "datos_limpios.csv"
 df_limpio.to_csv(archivo_csv, index=False, sep=';')
-print(f"✅ Archivo CSV guardado: {archivo_csv}")
+print(f"Archivo CSV guardado: {archivo_csv}")
 
 # ============================================================================
 # 8. ESTADÍSTICAS
