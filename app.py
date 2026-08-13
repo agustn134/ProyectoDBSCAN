@@ -769,7 +769,7 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
             ),
             xaxis=dict(
                 title=dict(
-                    text=f"Eje de Gasto y Frecuencia social ({v[0]*100:.1f}% de variación)",
+                    text=f"Dimensión 1: Patrón de Gasto y Frecuencia de Consumo (Explica {v[0]*100:.1f}% de la varianza)",
                     font=dict(size=11, color="#475569"),
                 ),
                 tickfont=dict(size=9, color="#94a3b8"),
@@ -778,7 +778,7 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
             ),
             yaxis=dict(
                 title=dict(
-                    text=f"Eje de Estrés y Actividad ({v[1]*100:.1f}% de variación)",
+                    text=f"Dimensión 2: Nivel de Estrés y Tipo de Descanso (Explica {v[1]*100:.1f}% de la varianza)",
                     font=dict(size=11, color="#475569"),
                 ),
                 tickfont=dict(size=9, color="#94a3b8"),
