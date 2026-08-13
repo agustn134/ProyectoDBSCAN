@@ -1,0 +1,15 @@
+{
+  "fecha_entrenamiento": "2026-08-11T14:56:57",
+  "algoritmo": "DBSCAN",
+  "parametros": "eps=0.24, min_samples=6",
+  "n_registros": 5000,
+  "ponderacion": {
+    "P1_Destino": 0.35,
+    "P2_Estres": 0.25,
+    "P3_Frecuencia": 0.2,
+    "P4_NivelEstres": 0.1,
+    "P5_FinSemana": 0.1
+  },
+  "clusters_encontrados": 16,
+  "puntos_ruido": 0
+}
