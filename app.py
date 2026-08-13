@@ -663,6 +663,28 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
         pca2_rng = df_resultado["PCA_2"].max() - df_resultado["PCA_2"].min() + 1e-6
         jitter_pct = 0.008  # 0.8% del rango total
 
+        from sklearn.neighbors import NearestNeighbors
+        from utils.data_handler import FEATURES
+
+        # Solo aplica si el algoritmo fue DBSCAN (K-Means no tiene ruido)
+        if res["nombre_alg"] == "DBSCAN":
+            scaler_entrenado  = res["modelo_obj"]["scaler"]
+            weights_entrenado = res["modelo_obj"]["weights"]
+            eps_usado         = res["modelo_obj"]["modelo"].eps
+            min_samples_usado = res["modelo_obj"]["modelo"].min_samples
+
+            X_full_weighted = scaler_entrenado.transform(df_resultado[FEATURES].values) * weights_entrenado
+            nn = NearestNeighbors(radius=eps_usado).fit(X_full_weighted)
+            _, indices_vecinos = nn.radius_neighbors(X_full_weighted)
+            df_resultado["_n_vecinos"] = [len(idx) - 1 for idx in indices_vecinos]  # -1 excluye a si mismo
+
+            # Centroide de cada arquetipo real, en espacio PCA, para medir cercania
+            centroides = {
+                lbl: (df_resultado.loc[df_resultado["Cluster"] == lbl, "PCA_1"].mean(),
+                      df_resultado.loc[df_resultado["Cluster"] == lbl, "PCA_2"].mean())
+                for lbl in arquetipos_reales
+            }
+
         for i, label in enumerate(unique_labels):
             subset = df_resultado[df_resultado["Cluster"] == label].copy()
 
@@ -685,13 +707,37 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
             hover_texts = []
             for _, row in subset.iterrows():
                 nombre_h = info_arq[label]["nombre"] if label != -1 else "Caso atípico"
+                
+                if label == -1 and res["nombre_alg"] == "DBSCAN":
+                    n_vec = int(row["_n_vecinos"])
+                    # arquetipo mas cercano en espacio PCA
+                    if arquetipos_reales:
+                        dists = {lbl: ((row["PCA_1"]-cx)**2 + (row["PCA_2"]-cy)**2)**0.5
+                                 for lbl, (cx, cy) in centroides.items()}
+                        lbl_cercano = min(dists, key=dists.get)
+                        nombre_cercano = info_arq[lbl_cercano]["nombre"]
+                    else:
+                        nombre_cercano = "Ninguno"
+                
+                    razon = (
+                        f"<br><br><i>¿Por qué atípico?</i><br>"
+                        f"Solo tiene <b>{n_vec}</b> vecino(s) similares dentro del radio "
+                        f"(necesita {min_samples_usado} para formar parte de un arquetipo).<br>"
+                        f"El más parecido es <b>{nombre_cercano}</b>, pero no lo suficiente."
+                    )
+                else:
+                    razon = ""
+                
                 hover_texts.append(
                     f"<b>{nombre_h}</b><br>"
                     f"Edad: {int(row['Edad'])} años<br>"
                     f"Estrés: {row['P4_NivelEstres']}/10<br>"
                     f"Género: {row['Genero']}<br>"
                     f"Gasto: {row.get('P1_Destino', '—')}<br>"
-                    f"Manejo estrés: {row.get('P2_Estres', '—')}"
+                    f"Manejo estrés: {row.get('P2_Estres', '—')}<br>"
+                    f"Frecuencia de salidas: {row.get('P3_Frecuencia', '—')}<br>"
+                    f"Actividad fin de semana: {row.get('P5_FinSemana', '—')}"
+                    f"{razon}"
                 )
 
             fig_plotly.add_trace(go.Scattergl(
