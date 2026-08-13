@@ -256,6 +256,17 @@ with st.expander("2.   Estadística descriptiva", expanded=False):
             "— ver el texto exacto de cada pregunta en la Sección 1."
         )
         st.dataframe(df_filtrado[FEATURES].describe().round(2), use_container_width=True)
+        st.markdown(
+            "<p style='font-size:0.85rem; color:#64748b; margin-top:0.5rem;'>"
+            "<b>Guía de lectura de las filas:</b><br>"
+            "• <b>count</b>: Cantidad de respuestas.<br>"
+            "• <b>mean</b>: Promedio de las respuestas.<br>"
+            "• <b>std</b>: Desviación estándar (qué tanto varían las respuestas).<br>"
+            "• <b>min / max</b>: Valores mínimo y máximo registrados.<br>"
+            "• <b>50% (Mediana)</b>: El valor central exacto de todas las respuestas (más robusto que el promedio)."
+            "</p>",
+            unsafe_allow_html=True
+        )
 
 # ===========================================================================
 # SECCION 3 — PONDERACION Y JUSTIFICACION TEORICA
