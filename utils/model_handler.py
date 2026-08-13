@@ -31,6 +31,36 @@ PESOS_INFO = [
 
 COLORES_PALETTE = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4"]
 
+TARGET_MIN_CLUSTERS = 3
+TARGET_MAX_CLUSTERS = 6
+
+
+def min_samples_recomendado(n_registros: int, d_variables: int = 5) -> int:
+    """
+    Calcula un min_samples adaptado al tamaño de la muestra.
+
+    La regla clásica D+1 (=6 con 5 variables) es razonable para muestras
+    pequeñas (~73 registros), pero con muestras grandes (>500) ese umbral
+    es tan bajo que casi cualquier bolsita de puntos supera el criterio de
+    'núcleo', lo que produce decenas de micro-clusters.
+
+    Esta función escala el umbral logarítmicamente para que 'vecindad densa'
+    siga siendo estadísticamente significativa independientemente del n.
+
+    Parameters
+    ----------
+    n_registros : número de registros en el dataset
+    d_variables : número de features usados (por defecto 5)
+
+    Returns
+    -------
+    int con el min_samples recomendado (mínimo D+1)
+    """
+    base = d_variables + 1                              # regla clásica (≥6)
+    escalado = int(np.log(max(n_registros, 2)) * d_variables)
+    return max(base, escalado)
+
+
 
 def entrenar(
     df: pd.DataFrame,
@@ -117,20 +147,28 @@ def entrenar(
     }
 
 
-def calcular_epsilon_sugerido(df: pd.DataFrame, min_samples: int = 6) -> float:
+def calcular_epsilon_sugerido(df: pd.DataFrame, min_samples: int | None = None) -> float:
     """
-    Calcula el valor óptimo de epsilon con auto-afinación.
+    Calcula el valor óptimo de epsilon mediante búsqueda en grilla log-espaciada.
 
-    1. Calcula las k-distancias ordenadas.
-    2. Intenta el método del codo (máx. segunda derivada).
-    3. Valida que el eps resultante produzca entre 3-6 clusters.
-    4. Si no lo logra, hace búsqueda binaria sobre el rango de distancias
-       para encontrar el eps que genera ~4 clusters.
+    A diferencia de una bisección clásica, esta función NO asume que la curva
+    #clusters vs eps sea monótona (en realidad tiene forma de campana: sube
+    con eps pequeño y baja con eps grande). Una bisección puede quedar atrapada
+    en el pico de micro-clusters; la grilla evalúa todo el rango de forma pareja.
+
+    Cambios respecto a la versión anterior
+    ---------------------------------------
+    - min_samples se auto-calcula con min_samples_recomendado() si no se pasa.
+      Esto evita que con 5000 registros min_samples=6 sea tan laxo que cualquier
+      bolsita de puntos cuente como núcleo.
+    - Se reemplaza la bisección (25 iteraciones) por una grilla de 40 candidatos
+      en escala logarítmica sobre el rango real de distancias k-NN.
 
     Parameters
     ----------
     df          : DataFrame limpio con las columnas FEATURES
-    min_samples : valor de min_samples que se usará
+    min_samples : valor de min_samples a usar. Si es None se calcula
+                  automáticamente con min_samples_recomendado().
 
     Returns
     -------
@@ -138,73 +176,75 @@ def calcular_epsilon_sugerido(df: pd.DataFrame, min_samples: int = 6) -> float:
     """
     from sklearn.neighbors import NearestNeighbors
 
+    n_registros = len(df)
+    if min_samples is None:
+        min_samples = min_samples_recomendado(n_registros)
+
     X = df[FEATURES].values
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     X_weighted = X_scaled * WEIGHTS
 
-    k = max(min_samples - 1, 1)
-    k = min(k, len(X_weighted) - 1)
+    k = min(max(min_samples - 1, 1), len(X_weighted) - 1)
 
     neigh = NearestNeighbors(n_neighbors=k)
     neigh.fit(X_weighted)
     distances, _ = neigh.kneighbors(X_weighted)
+    d_ordenadas = np.sort(distances[:, k - 1])
 
-    distancias_ordenadas = np.sort(distances[:, k - 1], axis=0)
-
-    # --- Paso 1: método del codo (segunda derivada) ---
-    if len(distancias_ordenadas) > 2:
-        segunda_derivada = np.diff(distancias_ordenadas, n=2)
-        idx_codo = np.argmax(segunda_derivada) + 2
-        eps_codo = float(distancias_ordenadas[idx_codo])
-    else:
-        eps_codo = float(np.median(distancias_ordenadas))
-
-    # --- Paso 2: validar con DBSCAN rápido ---
-    def contar_clusters(eps_val):
-        """Retorna cuántos clusters (sin contar ruido) genera un eps dado."""
+    def contar_clusters(eps_val: float) -> int:
+        """Retorna cuántos clusters (sin ruido) genera un eps dado."""
         test_labels = DBSCAN(eps=eps_val, min_samples=min_samples).fit_predict(X_weighted)
         return len(set(test_labels) - {-1})
 
-    TARGET_MIN, TARGET_MAX = 3, 6
-    n_clusters_codo = contar_clusters(eps_codo)
+    # --- Grilla log-espaciada: 40 candidatos sobre el rango real de distancias ---
+    # geomspace garantiza cobertura uniforme en escala log, que es donde
+    # la curva #clusters-vs-eps tiene más variación.
+    d_min = max(float(d_ordenadas[0]), 0.02)
+    d_max = float(d_ordenadas[-1])
+    candidatos = np.unique(np.round(np.geomspace(d_min, d_max, 40), 3))
 
-    if TARGET_MIN <= n_clusters_codo <= TARGET_MAX:
-        return round(max(eps_codo, 0.1), 2)
+    resultados = [(float(eps), contar_clusters(eps)) for eps in candidatos]
 
-    # --- Paso 3: búsqueda binaria sobre el rango de distancias reales ---
-    eps_lo = float(distancias_ordenadas[0])             # más estricto
-    eps_hi = float(distancias_ordenadas[-1])             # más permisivo
-    eps_lo = max(eps_lo, 0.05)
+    en_rango = [
+        (e, c) for e, c in resultados
+        if TARGET_MIN_CLUSTERS <= c <= TARGET_MAX_CLUSTERS
+    ]
 
-    mejor_eps  = eps_codo
-    mejor_diff = abs(n_clusters_codo - 4)
+    if en_rango:
+        # De los candidatos válidos, preferir el más cercano a 4 clusters
+        mejor = min(en_rango, key=lambda ec: abs(ec[1] - 4))
+    else:
+        # Ningún candidato cayó en 3-6; devolver el menos malo
+        mejor = min(resultados, key=lambda ec: abs(ec[1] - 4))
 
-    for _ in range(25):  # máx 25 iteraciones de bisección
-        eps_mid    = (eps_lo + eps_hi) / 2
-        n_clusters = contar_clusters(eps_mid)
+    return round(max(mejor[0], 0.05), 2)
 
-        diff = abs(n_clusters - 4)
-        if diff < mejor_diff or (diff == mejor_diff and n_clusters >= TARGET_MIN):
-            mejor_diff = diff
-            mejor_eps  = eps_mid
 
-        if TARGET_MIN <= n_clusters <= TARGET_MAX:
-            return round(max(eps_mid, 0.1), 2)
+def contar_clusters_para_eps(
+    df: pd.DataFrame, eps: float, min_samples: int | None = None
+) -> int:
+    """
+    Cuenta los clusters que produciría DBSCAN con los parámetros dados,
+    sin guardar ni modificar nada. Útil para mostrar feedback en vivo en la UI.
 
-        if n_clusters > TARGET_MAX:
-            # demasiados clusters → eps muy chico → subir
-            eps_lo = eps_mid
-        elif n_clusters < TARGET_MIN:
-            # muy pocos clusters → eps muy grande → bajar
-            eps_hi = eps_mid
-        else:
-            break
+    Parameters
+    ----------
+    df          : DataFrame limpio con las columnas FEATURES
+    eps         : valor de epsilon a evaluar
+    min_samples : si es None, se calcula con min_samples_recomendado()
 
-        if (eps_hi - eps_lo) < 0.01:
-            break
+    Returns
+    -------
+    int con el número de clusters encontrados (sin contar ruido)
+    """
+    if min_samples is None:
+        min_samples = min_samples_recomendado(len(df))
 
-    return round(max(mejor_eps, 0.1), 2)
+    X = df[FEATURES].values
+    X_weighted = StandardScaler().fit_transform(X) * WEIGHTS
+    labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(X_weighted)
+    return len(set(labels) - {-1})
 
 
 

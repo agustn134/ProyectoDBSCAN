@@ -24,7 +24,7 @@ from utils.data_handler import cargar_y_limpiar, aplicar_filtros, FEATURES
 from utils.model_handler import (
     PESOS_INFO, COLORES_PALETTE,
     entrenar, guardar_archivos, interpretar_clusters, generar_reporte,
-    calcular_epsilon_sugerido,
+    calcular_epsilon_sugerido, contar_clusters_para_eps, min_samples_recomendado,
 )
 
 # ---------------------------------------------------------------------------
@@ -299,17 +299,42 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
                  "K-Means requiere definir el número de grupos manualmente.",
         )
 
-    # Calcular epsilon sugerido con los datos filtrados (k-distancia)
-    MIN_SAMPLES_RECOMENDADO = 6  # D+1, donde D=5 variables
-    eps_sugerido = calcular_epsilon_sugerido(df_filtrado, min_samples=MIN_SAMPLES_RECOMENDADO)
+    # Calcular min_samples y epsilon sugeridos con los datos filtrados
+    MIN_SAMPLES_RECOMENDADO = min_samples_recomendado(len(df_filtrado))
+    eps_sugerido = calcular_epsilon_sugerido(df_filtrado)  # usa min_samples auto
 
     if "DBSCAN" in algoritmo:
         with col_e1:
-            eps = st.slider("Epsilon (ε) — radio de vecindad", 0.1, 10.0,
-                            float(min(max(eps_sugerido, 0.1), 10.0)), 0.05, key="eps")
+            eps = st.slider("Epsilon (ε) — radio de vecindad", 0.05, 10.0,
+                            float(min(max(eps_sugerido, 0.05), 10.0)), 0.05, key="eps")
+
+            # --- Preview en vivo: cuántos clusters produciría este eps ---
+            n_preview = contar_clusters_para_eps(df_filtrado, eps, MIN_SAMPLES_RECOMENDADO)
+            en_rango  = 3 <= n_preview <= 6
+            badge_color  = "#16a34a" if en_rango else "#d97706"
+            badge_bg     = "#f0fdf4" if en_rango else "#fffbeb"
+            badge_border = "#bbf7d0" if en_rango else "#fde68a"
+            badge_icon   = "✅" if en_rango else "⚠️"
+            rango_txt    = "dentro del rango ideal (3-6)" if en_rango else "fuera del rango ideal (3-6)"
             st.markdown(
                 f"""
-                <div style='font-size:0.82rem; color:#475569; margin-top:0.4rem; line-height:1.5;'>
+                <div style='
+                    display:inline-flex; align-items:center; gap:0.5rem;
+                    background:{badge_bg}; border:1px solid {badge_border};
+                    border-radius:8px; padding:0.4rem 0.85rem;
+                    margin:0.4rem 0 0.2rem 0; font-size:0.88rem;
+                '>
+                    <span style='font-size:1.1rem;'>{badge_icon}</span>
+                    <span>Con este ε, DBSCAN encontraría</span>
+                    <strong style='color:{badge_color}; font-size:1.05rem;'>{n_preview}</strong>
+                    <span>arquetipo{'s' if n_preview != 1 else ''} — <em>{rango_txt}</em></span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"""
+                <div style='font-size:0.82rem; color:#475569; margin-top:0.25rem; line-height:1.5;'>
                     <strong>¿Qué es?</strong> Define el radio de búsqueda alrededor de cada persona.
                     Dos personas con hábitos similares quedan dentro de este radio y se pueden agrupar.<br>
                     <strong>⚠️ Muy pequeño</strong> → muchos grupos diminutos o todo ruido.<br>
@@ -323,7 +348,7 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
         with col_e2:
             min_samples = st.slider(
                 "Mínimo de personas por grupo",
-                2, 15,
+                2, max(30, MIN_SAMPLES_RECOMENDADO + 5),
                 MIN_SAMPLES_RECOMENDADO,
                 key="ms",
             )
@@ -334,7 +359,7 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
                     similares (estar dentro del radio ε) para que DBSCAN las considere un <em>arquetipo válido</em>.
                     Si hay menos, las marca como <strong>ruido</strong> (casos atípicos).<br>
                     <span style='color:#3b82f6; font-weight:600;'>✦ Valor sugerido: {MIN_SAMPLES_RECOMENDADO}</span>
-                    <span style='color:#64748b;'> (regla D+1, donde D=5 variables de tu modelo)</span>
+                    <span style='color:#64748b;'> (escalado automáticamente: log(n={len(df_filtrado)}) × D=5 variables)</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
