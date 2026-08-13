@@ -25,7 +25,8 @@ from utils.background   import inject_hero_geometric_background
 from utils.data_handler import cargar_y_limpiar, aplicar_filtros, FEATURES
 from utils.model_handler import (
     PESOS_INFO, COLORES_PALETTE, COLOR_ARQUETIPOS,
-    entrenar, guardar_archivos, interpretar_clusters, generar_reporte,
+    entrenar, guardar_archivos, guardar_corrida, cargar_historial,
+    interpretar_clusters, generar_reporte,
     calcular_epsilon_sugerido, contar_clusters_para_eps, min_samples_recomendado,
     calcular_silueta, calcular_kdistancia, comparar_modelos, generar_reporte_pdf
 )
@@ -202,6 +203,14 @@ with st.expander("1.   Vista de datos y filtros", expanded=True):
         st.dataframe(df_vista, use_container_width=True)
 
     st.caption(f"Mostrando {len(df_vista)} de {n_total} respuestas válidas.")
+
+    st.download_button(
+        label="⬇️ Descargar datos filtrados (CSV)",
+        data=df_filtrado.to_csv(sep=";", index=False).encode("utf-8-sig"),
+        file_name=f"datos_filtrados_{filtro_genero}_{filtro_edad[0]}-{filtro_edad[1]}.csv",
+        mime="text/csv",
+        key="btn_descarga_filtrados",
+    )
 
 # ===========================================================================
 # SECCION 2 — ESTADISTICA DESCRIPTIVA
@@ -493,6 +502,9 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
             res = entrenar(df_filtrado, algoritmo, **kw)
             guardar_archivos(res["modelo_obj"], res["metadatos"])
             st.session_state["modelo_res"] = res
+            # Silueta preliminar para el historial (puede ser None si todos son ruido)
+            sil_hist = calcular_silueta(df_filtrado, res["labels"])
+            guardar_corrida(res["modelo_obj"], res["metadatos"], silueta=sil_hist)
 
     if "modelo_res" in st.session_state and not st.session_state["modelo_res"].get("comparacion"):
         res = st.session_state["modelo_res"]
@@ -946,9 +958,42 @@ a ningún arquetipo. Su presencia <strong>valida la robustez del modelo</strong>
             )
 
 # ===========================================================================
+# SECCION 4.1 — HISTORIAL DE CORRIDAS
+# ===========================================================================
+st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+
+with st.expander("🗂️  Historial de corridas anteriores", expanded=False):
+    historial = cargar_historial()
+    if not historial:
+        st.caption("Todavía no hay corridas guardadas. Entrena el modelo al menos una vez.")
+    else:
+        df_historial = pd.DataFrame(historial)[[
+            "fecha", "algoritmo", "parametros", "n_registros",
+            "clusters_encontrados", "puntos_ruido", "silueta"
+        ]].rename(columns={
+            "fecha":                 "Fecha",
+            "algoritmo":             "Algoritmo",
+            "parametros":            "Parámetros",
+            "n_registros":           "Registros",
+            "clusters_encontrados":  "Clusters",
+            "puntos_ruido":          "Ruido",
+            "silueta":               "Silueta",
+        })
+        st.dataframe(
+            df_historial.sort_values("Fecha", ascending=False),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.caption(
+            f"Total de corridas guardadas: **{len(historial)}**  ·  "
+            f"Archivos en `historial_corridas/`"
+        )
+
+# ===========================================================================
 # SECCION 5 — EXPLORADOR VISUAL INTERACTIVO (PYGWALKER)
 # ===========================================================================
 st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+
 
 with st.expander("5.   Explorador visual interactivo", expanded=False):
     if not PYGWALKER_OK:

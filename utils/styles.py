@@ -74,8 +74,10 @@ section[data-testid="stSidebar"] * {
     color: #475569;
     font-weight: 500;
     max-width: 680px;
+    width: 100%;
     margin: 0 auto 2rem auto;
     line-height: 1.5;
+    text-align: center !important;
 }
 
 @keyframes fadeIn {

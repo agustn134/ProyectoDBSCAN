@@ -362,6 +362,64 @@ def guardar_archivos(modelo_obj: dict, metadatos: dict) -> None:
         json.dump(metadatos, f, ensure_ascii=False, indent=2)
 
 
+import os
+
+CARPETA_HISTORIAL = "historial_corridas"
+ARCHIVO_INDICE    = os.path.join(CARPETA_HISTORIAL, "indice.json")
+
+
+def guardar_corrida(modelo_obj: dict, metadatos: dict, silueta: float | None = None) -> str:
+    """
+    Guarda una corrida de entrenamiento con timestamp único, sin sobreescribir
+    corridas anteriores. Actualiza un indice.json con el resumen de todas
+    las corridas para poder listarlas en la UI.
+
+    Returns
+    -------
+    str: el id de la corrida (yyyy mmdd_HHMMSS)
+    """
+    os.makedirs(CARPETA_HISTORIAL, exist_ok=True)
+
+    corrida_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    ruta_pkl  = os.path.join(CARPETA_HISTORIAL, f"modelo_{corrida_id}.pkl")
+    ruta_json = os.path.join(CARPETA_HISTORIAL, f"metadatos_{corrida_id}.json")
+
+    joblib.dump(modelo_obj, ruta_pkl)
+    with open(ruta_json, "w", encoding="utf-8") as f:
+        json.dump(metadatos, f, ensure_ascii=False, indent=2)
+
+    # Actualizar indice.json (lista resumida para mostrar en tabla)
+    indice: list[dict] = []
+    if os.path.exists(ARCHIVO_INDICE):
+        with open(ARCHIVO_INDICE, "r", encoding="utf-8") as f:
+            indice = json.load(f)
+
+    indice.append({
+        "corrida_id":           corrida_id,
+        "fecha":                metadatos["fecha_entrenamiento"],
+        "algoritmo":            metadatos["algoritmo"],
+        "parametros":           metadatos["parametros"],
+        "n_registros":          metadatos["n_registros"],
+        "clusters_encontrados": metadatos["clusters_encontrados"],
+        "puntos_ruido":         metadatos["puntos_ruido"],
+        "silueta":              round(silueta, 3) if silueta is not None else None,
+        "archivo_modelo":       ruta_pkl,
+        "archivo_metadatos":    ruta_json,
+    })
+
+    with open(ARCHIVO_INDICE, "w", encoding="utf-8") as f:
+        json.dump(indice, f, ensure_ascii=False, indent=2)
+
+    return corrida_id
+
+
+def cargar_historial() -> list[dict]:
+    """Devuelve la lista de todas las corridas guardadas, o [] si no hay ninguna."""
+    if not os.path.exists(ARCHIVO_INDICE):
+        return []
+    with open(ARCHIVO_INDICE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def interpretar_clusters(df_resultado: pd.DataFrame, labels) -> list[dict]:
     """
