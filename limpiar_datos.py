@@ -1,7 +1,56 @@
+import glob
+import os
 import pandas as pd
 import numpy as np
 import re
 import unicodedata
+
+# ---------------------------------------------------------------------------
+# DETECCIÓN AUTOMÁTICA DEL ARCHIVO DE ENTRADA
+# ---------------------------------------------------------------------------
+ARCHIVO_FIJO   = "datos_reales.csv"
+COLUMNAS_MIN   = 20   # el export completo ("todas las versiones") tiene ~33 columnas
+COLUMNAS_CLAVE = 5    # al menos las 5 preguntas deben quedar no vacías
+
+def _encontrar_archivo_entrada() -> str:
+    """
+    Busca el CSV de entrada en este orden de prioridad:
+      1. datos_reales.csv  (nombre de convención histórica)
+      2. El CSV más reciente cuyo nombre comience con 'Arquetipos_de_Personalidad'
+         o contenga 'all_versions'
+    Lanza FileNotFoundError si no hay nada.
+    """
+    if os.path.exists(ARCHIVO_FIJO):
+        return ARCHIVO_FIJO
+
+    candidatos = glob.glob("Arquetipos_de_Personalidad*.csv") + \
+                 glob.glob("*all_versions*.csv")
+    if not candidatos:
+        raise FileNotFoundError(
+            "No se encontró 'datos_reales.csv' ni ningún export de KoboToolbox.\n"
+            "Descargá el CSV desde KoboToolbox (Datos → Descargas → "
+            "Opciones avanzadas → 'Incluir campos de todas las versiones') "
+            "y colocalo en la misma carpeta que este script."
+        )
+    # El más reciente por fecha de modificación
+    return max(candidatos, key=os.path.getmtime)
+
+
+def _validar_estructura(df: pd.DataFrame, ruta: str) -> None:
+    """
+    Valida que el DataFrame tenga la estructura esperada del export completo.
+    Lanza ValueError con mensaje claro si algo falla, en vez de generar
+    un datos_limpios.csv corrupto en silencio.
+    """
+    if len(df.columns) < COLUMNAS_MIN:
+        raise ValueError(
+            f"\n❌ El archivo '{ruta}' tiene solo {len(df.columns)} columnas "
+            f"(se necesitan al menos {COLUMNAS_MIN}).\n"
+            "Probablemente descargaste el export 'personalizado' incompleto.\n"
+            "Solución: en KoboToolbox, usá Datos → Descargas → "
+            "Opciones avanzadas → activá 'Incluir campos de todas las versiones'."
+        )
+
 
 def quitar_acentos(texto):
     """Elimina acentos y caracteres especiales de un texto"""
@@ -12,10 +61,18 @@ def quitar_acentos(texto):
     texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII')
     return texto
 
+# ---------------------------------------------------------------------------
+# CARGA Y VALIDACIÓN
+# ---------------------------------------------------------------------------
 print("🔄 Limpiando y estandarizando datos de KoboToolbox...")
-df = pd.read_csv("datos_reales.csv", sep=';')
 
-print(f" Columnas originales: {len(df.columns)}")
+ruta_entrada = _encontrar_archivo_entrada()
+print(f"📂 Archivo de entrada: {ruta_entrada}")
+
+df = pd.read_csv(ruta_entrada, sep=';')
+_validar_estructura(df, ruta_entrada)
+
+print(f"   Columnas originales: {len(df.columns)}")
 print(f"📋 Filas totales: {len(df)}")
 
 # ============================================================================
