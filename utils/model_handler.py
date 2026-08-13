@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import DBSCAN, KMeans
+from sklearn.mixture import GaussianMixture
 from sklearn.decomposition import PCA
 
 from utils.data_handler import FEATURES, MAPA_P1, MAPA_P2
@@ -29,7 +30,20 @@ PESOS_INFO = [
     ("P5 — Actividad fin de semana",  10, "Contextualiza la rutina de consumo temporal."),
 ]
 
-COLORES_PALETTE = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4"]
+COLOR_ARQUETIPOS = {
+    "Hedonista Social": "#3b82f6",
+    "Hedonista Social — Alto Estrés": "#3b82f6",
+    "Hedonista Social — Bajo Estrés": "#60a5fa",
+    "Bienestar Consciente": "#10b981",
+    "Bienestar Consciente — Activo": "#10b981",
+    "Bienestar Consciente — Reflexivo": "#34d399",
+    "Equilibrado Práctico": "#f59e0b",
+    "Explorador de Experiencias": "#8b5cf6",
+    "Explorador de Experiencias — Frecuente": "#8b5cf6",
+    "Explorador de Experiencias — Ocasional": "#a78bfa",
+    "Perfil Mixto": "#64748b",
+}
+COLORES_PALETTE = list(COLOR_ARQUETIPOS.values())
 
 TARGET_MIN_CLUSTERS = 3
 TARGET_MAX_CLUSTERS = 6
@@ -98,6 +112,11 @@ def entrenar(
         labels        = modelo_fit.fit_predict(X_weighted)
         nombre_alg    = "DBSCAN"
         param_display = f"eps={eps}, min_samples={min_samples}"
+    elif "GMM" in algoritmo:
+        modelo_fit    = GaussianMixture(n_components=k_clusters, random_state=42, n_init=5)
+        labels        = modelo_fit.fit_predict(X_weighted)
+        nombre_alg    = "GMM (Gaussian Mixture)"
+        param_display = f"componentes={k_clusters}"
     else:
         modelo_fit    = KMeans(n_clusters=k_clusters, random_state=42, n_init=10)
         labels        = modelo_fit.fit_predict(X_weighted)
@@ -452,3 +471,46 @@ Varianza explicada por PCA:
 Generado por: Aplicacion de Analisis No Supervisado (Streamlit)
 ============================================================
 """
+
+
+def comparar_modelos(
+    df: pd.DataFrame,
+    eps: float, min_samples: int, k_clusters: int
+) -> pd.DataFrame:
+    import time
+    resultados = []
+    
+    for alg in ["DBSCAN", "K-Means", "GMM (Gaussian Mixture)"]:
+        t0 = time.time()
+        res = entrenar(df, alg, eps, min_samples, k_clusters)
+        t1 = time.time()
+        
+        sil = calcular_silueta(df, res["labels"])
+        n_clusters = len(set(res["labels"]) - {-1})
+        n_ruido = list(res["labels"]).count(-1)
+        pct_ruido = round(n_ruido / len(df) * 100, 1)
+        
+        resultados.append({
+            "Algoritmo": alg,
+            "Clusters": n_clusters,
+            "Silueta": round(sil, 3) if sil else "N/A",
+            "Ruido (%)": f"{pct_ruido}%",
+            "Tiempo (s)": round(t1 - t0, 3)
+        })
+        
+    return pd.DataFrame(resultados)
+
+
+def generar_reporte_pdf(texto_reporte: str) -> bytes:
+    from fpdf import FPDF
+    import io
+    
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    pdf.set_font("Helvetica", size=10)
+    for linea in texto_reporte.split("\n"):
+        pdf.multi_cell(0, 6, txt=linea)
+        
+    return pdf.output(dest="S")

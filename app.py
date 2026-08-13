@@ -24,10 +24,10 @@ from utils.styles       import inject_css
 from utils.background   import inject_hero_geometric_background
 from utils.data_handler import cargar_y_limpiar, aplicar_filtros, FEATURES
 from utils.model_handler import (
-    PESOS_INFO, COLORES_PALETTE,
+    PESOS_INFO, COLORES_PALETTE, COLOR_ARQUETIPOS,
     entrenar, guardar_archivos, interpretar_clusters, generar_reporte,
     calcular_epsilon_sugerido, contar_clusters_para_eps, min_samples_recomendado,
-    calcular_silueta, calcular_kdistancia,
+    calcular_silueta, calcular_kdistancia, comparar_modelos, generar_reporte_pdf
 )
 
 # ---------------------------------------------------------------------------
@@ -102,7 +102,19 @@ if uploaded_file is None:
 # ---------------------------------------------------------------------------
 # CARGA Y PROCESAMIENTO
 # ---------------------------------------------------------------------------
-df = cargar_y_limpiar(uploaded_file)
+# Detección de cambio de archivo para purgar session_state viejo
+current_file_id = uploaded_file.name + str(uploaded_file.size)
+if "last_file_id" not in st.session_state or st.session_state["last_file_id"] != current_file_id:
+    st.session_state["last_file_id"] = current_file_id
+    st.session_state.pop("eps", None)
+    st.session_state.pop("ms", None)
+    st.session_state.pop("modelo_res", None)
+
+try:
+    df = cargar_y_limpiar(uploaded_file)
+except ValueError as e:
+    st.error(f"Error al cargar el archivo: {e}")
+    st.stop()
 
 n_total    = len(df)
 n_generos  = df["Genero"].nunique()
@@ -313,11 +325,11 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
     with col_alg:
         algoritmo = st.selectbox(
             "Algoritmo de agrupamiento",
-            ["DBSCAN (recomendado)", "K-Means"],
+            ["DBSCAN (recomendado)", "K-Means", "GMM (Gaussian Mixture)", "Comparación (DBSCAN vs K-Means vs GMM)"],
             index=0,
             key="alg",
             help="DBSCAN detecta clusters automáticamente y maneja ruido. "
-                 "K-Means requiere definir el número de grupos manualmente.",
+                 "K-Means y GMM requieren definir el número de grupos manualmente.",
         )
 
     # Calcular min_samples y epsilon sugeridos con los datos filtrados
@@ -331,12 +343,25 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
 
             # --- Preview en vivo: cuántos clusters produciría este eps ---
             n_preview = contar_clusters_para_eps(df_filtrado, eps, MIN_SAMPLES_RECOMENDADO)
-            en_rango  = 3 <= n_preview <= 6
-            badge_color  = "#16a34a" if en_rango else "#d97706"
-            badge_bg     = "#f0fdf4" if en_rango else "#fffbeb"
-            badge_border = "#bbf7d0" if en_rango else "#fde68a"
-            badge_icon   = "✅" if en_rango else "⚠️"
-            rango_txt    = "dentro del rango ideal (3-6)" if en_rango else "fuera del rango ideal (3-6)"
+            if n_preview in [1, 2]:
+                badge_color  = "#3b82f6"
+                badge_bg     = "#eff6ff"
+                badge_border = "#bfdbfe"
+                badge_icon   = "ℹ️"
+                rango_txt    = "muestra muy homogénea: 1-2 grupos detectados"
+            elif 3 <= n_preview <= 6:
+                badge_color  = "#16a34a"
+                badge_bg     = "#f0fdf4"
+                badge_border = "#bbf7d0"
+                badge_icon   = "✅"
+                rango_txt    = "dentro del rango ideal (3-6)"
+            else:
+                badge_color  = "#d97706"
+                badge_bg     = "#fffbeb"
+                badge_border = "#fde68a"
+                badge_icon   = "⚠️"
+                rango_txt    = "fuera del rango ideal (3-6)"
+
             st.markdown(
                 f"""
                 <div style='
@@ -399,22 +424,29 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
                 unsafe_allow_html=True,
             )
             kd_data = calcular_kdistancia(df_filtrado, MIN_SAMPLES_RECOMENDADO)
-            fig_kd, ax_kd = plt.subplots(figsize=(7, 3))
-            ax_kd.plot(kd_data["distancias"], color="#3b82f6", linewidth=1.5, alpha=0.9,
-                       label="k-distancia")
-            ax_kd.axvline(kd_data["idx_codo"], color="#ef4444", linestyle="--",
-                          linewidth=1.4, label=f"Codo → ε ≈ {kd_data['eps_codo']:.3f}")
-            ax_kd.axhline(kd_data["eps_codo"], color="#ef4444", linestyle=":",
-                          linewidth=1.0, alpha=0.45)
-            ax_kd.scatter([kd_data["idx_codo"]], [kd_data["eps_codo"]],
-                          color="#ef4444", s=55, zorder=5)
-            ax_kd.set_xlabel("Puntos ordenados", fontsize=9)
-            ax_kd.set_ylabel(f"{kd_data['min_samples_usado']}-distancia (ε)", fontsize=9)
-            ax_kd.set_title("Gráfico de k-distancia para selección de ε", fontsize=10)
-            ax_kd.legend(fontsize=8); ax_kd.yaxis.grid(True); ax_kd.set_axisbelow(True)
-            fig_kd.tight_layout()
-            st.pyplot(fig_kd)
-            plt.close(fig_kd)
+            
+            fig_kd = go.Figure()
+            fig_kd.add_trace(go.Scatter(
+                y=kd_data["distancias"], mode="lines", 
+                line=dict(color="#3b82f6", width=2), name="k-distancia"
+            ))
+            fig_kd.add_trace(go.Scatter(
+                x=[kd_data["idx_codo"]], y=[kd_data["eps_codo"]],
+                mode="markers", marker=dict(color="#ef4444", size=10),
+                name=f"Codo → ε ≈ {kd_data['eps_codo']:.3f}"
+            ))
+            fig_kd.add_vline(x=kd_data["idx_codo"], line_width=1.5, line_dash="dash", line_color="#ef4444")
+            fig_kd.add_hline(y=kd_data["eps_codo"], line_width=1, line_dash="dot", line_color="#ef4444")
+            
+            fig_kd.update_layout(
+                title=dict(text="Gráfico de k-distancia para selección de ε", font=dict(size=13)),
+                xaxis_title="Puntos ordenados",
+                yaxis_title=f"{kd_data['min_samples_usado']}-distancia (ε)",
+                height=300, margin=dict(l=20, r=20, t=40, b=20),
+                plot_bgcolor="#f8fafc", paper_bgcolor="#ffffff",
+                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+            )
+            st.plotly_chart(fig_kd, use_container_width=True)
             st.caption(
                 f"ε sugerido: {eps_sugerido}  ·  min_samples usado: {kd_data['min_samples_usado']}  ·  "
                 f"n = {len(df_filtrado)} registros"
@@ -442,6 +474,16 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
     st.markdown("<br>", unsafe_allow_html=True)
     run_model = st.button("Entrenar modelo y generar resultados")
 
+    if "Comparación" in algoritmo:
+        if run_model:
+            with st.spinner("Comparando modelos..."):
+                res_comp = comparar_modelos(df_filtrado, eps=eps_sugerido, min_samples=MIN_SAMPLES_RECOMENDADO, k_clusters=3)
+                st.session_state["modelo_res"] = {"comparacion": True, "data": res_comp}
+        if "modelo_res" in st.session_state and st.session_state["modelo_res"].get("comparacion"):
+            st.markdown("<p class='section-title'>Tabla comparativa de algoritmos</p>", unsafe_allow_html=True)
+            st.dataframe(st.session_state["modelo_res"]["data"], use_container_width=True, hide_index=True)
+            st.stop()
+            
     if run_model:
         if len(df_filtrado) < 4:
             st.error("No hay suficientes registros con los filtros actuales.")
@@ -452,7 +494,7 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
             guardar_archivos(res["modelo_obj"], res["metadatos"])
             st.session_state["modelo_res"] = res
 
-    if "modelo_res" in st.session_state:
+    if "modelo_res" in st.session_state and not st.session_state["modelo_res"].get("comparacion"):
         res = st.session_state["modelo_res"]
         st.success(
             f"Modelo entrenado ({res['nombre_alg']}) y guardado automáticamente en el proyecto para el entrenamiento de datos."
@@ -524,68 +566,46 @@ with st.expander("4.   Entrenamiento del algoritmo de agrupamiento", expanded=Tr
         def determinar_nombre_arquetipo(subset):
             """
             Asigna nombre teórico usando P1 (gasto), P2 (manejo estrés),
-            P3 (frecuencia) y P4 (nivel estrés) para mayor especificidad
-            y menor riesgo de colisión entre clusters distintos.
+            P3 (frecuencia) y P4 (nivel estrés) para mayor especificidad.
+            Retorna nombre_teorico, color_hex, descripcion.
             """
             if len(subset) == 0:
-                return "Perfil Mixto", "#6366f1", "Sin datos suficientes."
+                return "Perfil Mixto", COLOR_ARQUETIPOS["Perfil Mixto"], "Sin datos suficientes."
             p1_moda    = int(subset["P1_Destino_num"].mode()[0])
             p2_moda    = int(subset["P2_Estres_num"].mode()[0])
             p3_mediana = subset["P3_Frecuencia_num"].median()
             p4_media   = subset["P4_NivelEstres"].mean()
 
+            nombre = "Perfil Mixto"
+            desc = "Combinación de patrones sin predominancia clara en ninguna dimensión."
+
             if p1_moda == 1:
-                # Gasta en entretenimiento/salidas
                 if p4_media >= 6.5:
-                    return (
-                        "Hedonista Social — Alto Estrés", "#3b82f6",
-                        "Sale frecuentemente a desconectarse con alcohol y fiestas. "
-                        "El consumo social es su válvula de escape frente a un estrés elevado.",
-                    )
+                    nombre = "Hedonista Social — Alto Estrés"
+                    desc = "Sale frecuentemente a desconectarse con alcohol y fiestas. El consumo social es su válvula de escape frente a un estrés elevado."
                 else:
-                    return (
-                        "Hedonista Social — Bajo Estrés", "#60a5fa",
-                        "Gasta en salidas y ocio desde un estado de bienestar. "
-                        "El consumo social es parte de su estilo de vida, no una compensación.",
-                    )
+                    nombre = "Hedonista Social — Bajo Estrés"
+                    desc = "Gasta en salidas y ocio desde un estado de bienestar. El consumo social es parte de su estilo de vida, no una compensación."
             elif p1_moda == 2:
-                # Gasta en bienestar / salud
-                if p2_moda == 1:   # manejo activo (ejercicio)
-                    return (
-                        "Bienestar Consciente — Activo", "#10b981",
-                        "Invierte en gym, comida sana o naturaleza y maneja el estrés "
-                        "de forma proactiva con actividad física.",
-                    )
+                if p2_moda == 1:
+                    nombre = "Bienestar Consciente — Activo"
+                    desc = "Invierte en gym, comida sana o naturaleza y maneja el estrés de forma proactiva con actividad física."
                 else:
-                    return (
-                        "Bienestar Consciente — Reflexivo", "#34d399",
-                        "Orienta su gasto hacia el equilibrio personal. "
-                        "Prefiere descansar o planificar antes de salir a consumir.",
-                    )
+                    nombre = "Bienestar Consciente — Reflexivo"
+                    desc = "Orienta su gasto hacia el equilibrio personal. Prefiere descansar o planificar antes de salir a consumir."
             elif p1_moda == 3 and p3_mediana <= 2:
-                return (
-                    "Equilibrado Práctico", "#f59e0b",
-                    "Gasta de forma moderada y prioriza el ahorro o metas a futuro. "
-                    "Sale poco y cuando lo hace elige actividades de bajo costo.",
-                )
+                nombre = "Equilibrado Práctico"
+                desc = "Gasta de forma moderada y prioriza el ahorro o metas a futuro. Sale poco y cuando lo hace elige actividades de bajo costo."
             elif p1_moda == 4 or (p1_moda == 3 and p3_mediana > 2):
                 if p3_mediana >= 3:
-                    return (
-                        "Explorador de Experiencias — Frecuente", "#8b5cf6",
-                        "Sale seguido buscando novedad: viajes, cursos o aventuras. "
-                        "Gasta en crecimiento y descubrimiento, no en rutina.",
-                    )
+                    nombre = "Explorador de Experiencias — Frecuente"
+                    desc = "Sale seguido buscando novedad: viajes, cursos o aventuras. Gasta en crecimiento y descubrimiento, no en rutina."
                 else:
-                    return (
-                        "Explorador de Experiencias — Ocasional", "#a78bfa",
-                        "Busca experiencias de forma selectiva. "
-                        "Calidad sobre cantidad: pocas salidas pero significativas.",
-                    )
-            else:
-                return (
-                    "Perfil Mixto", "#64748b",
-                    "Combinación de patrones sin predominancia clara en ninguna dimensión.",
-                )
+                    nombre = "Explorador de Experiencias — Ocasional"
+                    desc = "Busca experiencias de forma selectiva. Calidad sobre cantidad: pocas salidas pero significativas."
+
+            color = COLOR_ARQUETIPOS.get(nombre, COLOR_ARQUETIPOS["Perfil Mixto"])
+            return nombre, color, desc
 
         unique_labels     = sorted(df_resultado["Cluster"].unique())
         arquetipos_reales = [l for l in unique_labels if l != -1]
@@ -879,7 +899,7 @@ a ningún arquetipo. Su presencia <strong>valida la robustez del modelo</strong>
 <p>Descarga los archivos generados por el algoritmo para su integración en producción o análisis posterior.</p>
 </div>""", unsafe_allow_html=True)
 
-        col_d1, col_d2, col_d3, col_d4 = st.columns(4)
+        col_d1, col_d2, col_d3, col_d4, col_d5 = st.columns(5)
 
         with col_d1:
             st.download_button(
@@ -916,6 +936,14 @@ a ningún arquetipo. Su presencia <strong>valida la robustez del modelo</strong>
                 file_name="reporte_arquetipos.txt",
                 mime="text/plain",
             )
+        with col_d5:
+            pdf_bytes = generar_reporte_pdf(reporte)
+            st.download_button(
+                label="Reporte (.pdf)",
+                data=pdf_bytes,
+                file_name="reporte_arquetipos.pdf",
+                mime="application/pdf",
+            )
 
 # ===========================================================================
 # SECCION 5 — EXPLORADOR VISUAL INTERACTIVO (PYGWALKER)
@@ -936,9 +964,16 @@ with st.expander("5.   Explorador visual interactivo", expanded=False):
 
         cols_pyg = ["Edad", "Genero", "P1_Destino_num", "P2_Estres_num",
                     "P3_Frecuencia_num", "P4_NivelEstres", "P5_FinSemana_num"]
-        df_pyg = df_filtrado[cols_pyg].copy()
-        df_pyg.columns = ["Edad", "Genero", "P1_Destino", "P2_Estres",
-                          "P3_Frecuencia", "P4_NivelEstres", "P5_FinSemana"]
+        
+        # Si el modelo fue entrenado, agregar las columnas de clustering al explorador
+        if "modelo_res" in st.session_state and not st.session_state["modelo_res"].get("comparacion"):
+            df_pyg = st.session_state["modelo_res"]["df_resultado"][cols_pyg + ["Cluster", "PCA_1", "PCA_2"]].copy()
+            df_pyg.columns = ["Edad", "Genero", "P1_Destino", "P2_Estres",
+                              "P3_Frecuencia", "P4_NivelEstres", "P5_FinSemana", "Cluster", "PCA_1", "PCA_2"]
+        else:
+            df_pyg = df_filtrado[cols_pyg].copy()
+            df_pyg.columns = ["Edad", "Genero", "P1_Destino", "P2_Estres",
+                              "P3_Frecuencia", "P4_NivelEstres", "P5_FinSemana"]
 
         try:
             html_content = pyg.to_html(df_pyg, appearance="light", theme_key="streamlit", return_html=True)

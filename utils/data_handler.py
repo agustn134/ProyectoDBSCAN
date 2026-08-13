@@ -101,7 +101,7 @@ def cargar_y_limpiar(uploaded_file) -> pd.DataFrame:
     if all(col in df_raw.columns for col in columnas_clave):
         df = df_raw[columnas_clave].copy()
     else:
-        # Bloque unificado (basado en el de generar_datos.py) para mapear columnas viejas y nuevas del form real
+        # Intentar mapeo de formulario Kobo, pero si falla levantar error
         try:
             df['Edad'] = df_raw.iloc[:, 0].fillna(df_raw.iloc[:, 9])
             df['Genero'] = df_raw.iloc[:, 1].fillna(df_raw.iloc[:, 9])
@@ -111,10 +111,17 @@ def cargar_y_limpiar(uploaded_file) -> pd.DataFrame:
             df['P4_NivelEstres'] = df_raw.iloc[:, 6].fillna(df_raw.iloc[:, 20])
             df['P5_FinSemana'] = df_raw.iloc[:, 5].fillna(df_raw.iloc[:, 21])
         except IndexError:
-            # Por seguridad si el archivo tiene menos columnas, tomamos las primeras 7 en el orden correcto
-            for i, col in enumerate(columnas_clave):
-                if i < len(df_raw.columns):
+            # Si tiene al menos 7 columnas, asumimos que están en orden, si no, fallamos.
+            if len(df_raw.columns) >= 7:
+                for i, col in enumerate(columnas_clave):
                     df[col] = df_raw.iloc[:, i]
+            else:
+                raise ValueError(
+                    "El archivo subido no tiene el formato esperado. "
+                    "Debe contener al menos 7 columnas con las respuestas de la encuesta, "
+                    "o tener las columnas explícitas: Edad, Genero, P1_Destino, P2_Estres, "
+                    "P3_Frecuencia, P4_NivelEstres, P5_FinSemana."
+                )
 
     # Conversión y limpieza de tipo de datos
     df["Edad"]              = pd.to_numeric(df["Edad"], errors="coerce")
